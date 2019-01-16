@@ -59,9 +59,9 @@ class LDAPAuthenticator(Authenticator):
 
         List Example:
             [
-            	uid={username},ou=people,dc=wikimedia,dc=org,
-            	uid={username},ou=Developers,dc=wikimedia,dc=org
-        	]
+                uid={username},ou=people,dc=wikimedia,dc=org,
+                uid={username},ou=Developers,dc=wikimedia,dc=org
+            ]
         """
     )
 
@@ -270,7 +270,9 @@ class LDAPAuthenticator(Authenticator):
                 attribute=self.user_attribute,
             ))
             return None
-        return conn.response[0]['attributes'][self.lookup_dn_user_dn_attribute]
+        ret = (conn.response[0]['attributes'][self.lookup_dn_user_dn_attribute],
+               conn.response[0]['dn'])
+        return ret
 
     def get_connection(self, userdn, password):
         server = ldap3.Server(
@@ -306,11 +308,12 @@ class LDAPAuthenticator(Authenticator):
 
         # No empty passwords!
         if password is None or password.strip() == '':
-            self.log.warn('username:%s Login denied for blank password', username)
+            self.log.warn(
+                'username:%s Login denied for blank password', username)
             return None
 
         if self.lookup_dn:
-            username = self.resolve_username(username)
+            username, resolved_dn = self.resolve_username(username)
             if not username:
                 return None
 
@@ -320,6 +323,9 @@ class LDAPAuthenticator(Authenticator):
                 username = re.subn(r"([^\\]),", r"\1\,", username)[0]
 
         bind_dn_template = self.bind_dn_template
+        if ((bind_dn_template is None or bind_dn_template == '' or bind_db_template == []) and self.lookup_dn):
+            bind_dn_template = [resolved_dn]
+
         if isinstance(bind_dn_template, str):
             # bind_dn_template should be of type List[str]
             bind_dn_template = [bind_dn_template]
@@ -434,14 +440,16 @@ if __name__ == "__main__":
     c.bind_dn_template = "uid={username},ou=people,dc=organisation,dc=org"
     c.user_attribute = 'uid'
     c.user_search_base = 'ou=people,dc=organisation,dc=org'
-    c.attributes = ['uid','cn','mail','ou','o']
+    c.attributes = ['uid', 'cn', 'mail', 'ou', 'o']
     # The following is an example of a search_filter which is build on LDAP AND and OR operations
     # here in this example as a combination of the LDAP attributes 'ou', 'mail' and 'uid'
-    sf = "(&(o={o})(ou={ou}))".format(o='yourOrganisation',ou='yourOrganisationalUnit')
-    sf += "(&(o={o})(mail={mail}))".format(o='yourOrganisation',mail='yourMailAddress')
+    sf = "(&(o={o})(ou={ou}))".format(
+        o='yourOrganisation', ou='yourOrganisationalUnit')
+    sf += "(&(o={o})(mail={mail}))".format(o='yourOrganisation',
+                                           mail='yourMailAddress')
     c.search_filter = "(&({{userattr}}={{username}})(|{}))".format(sf)
     username = input('Username: ')
     passwd = getpass.getpass()
-    data = dict(username=username,password=passwd)
-    rs=c.authenticate(None,data)
+    data = dict(username=username, password=passwd)
+    rs = c.authenticate(None, data)
     print(rs.result())
